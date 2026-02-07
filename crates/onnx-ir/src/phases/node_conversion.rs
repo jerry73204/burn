@@ -326,22 +326,20 @@ fn attach_value_stores(node: &mut RawNode, state_rc: &Rc<RefCell<GraphState>>) {
     }
 }
 
-/// Rename node with type-based counter
+/// Rename node with type-based counter, preserving original ONNX names when present.
 fn rename_node(
     node: &mut RawNode,
     counters: &mut HashMap<NodeType, usize>,
     name_registry: Option<&crate::graph_state::NameRegistry>,
 ) {
+    // Preserve the original ONNX name if it's non-empty.
+    if !node.name.is_empty() {
+        return;
+    }
+
     // If registry is available, use it to generate unique names across subgraphs
     if let Some(registry) = name_registry {
-        let old_name = node.name.clone();
         node.name = registry.generate_node_name(&node.node_type);
-        log::debug!(
-            "Renamed node: '{}' -> '{}' (type: {:?})",
-            old_name,
-            node.name,
-            node.node_type
-        );
     } else {
         // Fall back to local counter for backwards compatibility
         counters
