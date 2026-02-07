@@ -4,42 +4,41 @@ authors = [
     "Nathaniel Simard (@nathanielsimard)",
 ]
 description = "ONNX-IR is a pure Rust library for parsing ONNX models into an intermediate representation that can be used to generate code for various ML/DL frameworks"
-edition.workspace = true
-license.workspace = true
+edition = "2024"
+license = "MIT OR Apache-2.0"
 name = "onnx-ir"
-readme.workspace = true
+readme = "README.md"
 repository = "https://github.com/tracel-ai/burn/tree/main/crates/onnx-ir"
 documentation = "https://docs.rs/onnx-ir"
-version.workspace = true
+version = "0.20.1"
 
-[lints]
-workspace = true
+[workspace]
 
 [features]
 default = ["mmap"]
 mmap = ["memmap2"]
 
 [dependencies]
-burn-tensor = { path = "../burn-tensor", version = "0.20.1", default-features = false }
-onnx-ir-derive = { path = "../onnx-ir-derive", version = "0.20.1" }
-bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
-derive-new = { workspace = true }
-half = { workspace = true, features = ["bytemuck"] }
-log = { workspace = true }
-protobuf = { workspace = true, features = ["with-bytes"] }
-regex = { workspace = true, features = ["default"] }
-serde = { workspace = true, features = ["derive"] }
-strum = { workspace = true }
-bytes = { workspace = true }
-memmap2 = { workspace = true, optional = true }
+burn-tensor = { version = "0.20.1", default-features = false }
+onnx-ir-derive = { version = "0.20.1" }
+bytemuck = { version = "1.24.0", features = ["extern_crate_alloc"] }
+derive-new = { version = "0.7.0", default-features = false }
+half = { version = "2.7.1", features = ["bytemuck"], default-features = false }
+log = { version = "0.4.29", default-features = false }
+protobuf = { version = "3.7.2", features = ["with-bytes"] }
+regex = { version = "1.12.1", default-features = false, features = ["default"] }
+serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
+strum = { version = "0.27.2", features = ["derive"] }
+bytes = { version = "1.10", default-features = false }
+memmap2 = { version = "0.9", optional = true }
 
 [build-dependencies]
-protobuf-codegen = { workspace = true }
+protobuf-codegen = "3.7.2"
 
 [dev-dependencies]
-pretty_assertions = { workspace = true }
-rstest = { workspace = true }
-tempfile = { workspace = true }
+pretty_assertions = "1.4.1"
+rstest = "0.26.1"
+tempfile = "3.24.0"
 divan = "0.1"
 
 [[bench]]
