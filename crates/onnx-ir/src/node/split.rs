@@ -260,13 +260,14 @@ impl NodeProcessor for SplitProcessor {
 
                     // Validate that sum of split sizes matches the dimension size (if static shape is available)
                     if let Some(static_shape) = &tensor.static_shape {
-                        let dim_size = static_shape[axis as usize];
-                        let total_size: usize = usizes.iter().sum();
-                        if total_size != dim_size {
-                            return Err(ProcessError::Custom(format!(
-                                "Split: sum of split sizes ({}) must equal dimension size ({}) along axis {}",
-                                total_size, dim_size, axis
-                            )));
+                        if let Some(&dim_size) = static_shape.get(axis as usize) {
+                            let total_size: usize = usizes.iter().sum();
+                            if total_size != dim_size {
+                                return Err(ProcessError::Custom(format!(
+                                    "Split: sum of split sizes ({}) must equal dimension size ({}) along axis {}",
+                                    total_size, dim_size, axis
+                                )));
+                            }
                         }
                     }
 
