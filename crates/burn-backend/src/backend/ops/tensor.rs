@@ -1647,4 +1647,177 @@ pub trait FloatTensorOps<B: Backend> {
     fn float_is_inf(tensor: FloatTensor<B>) -> BoolTensor<B> {
         B::float_equal_elem(B::float_abs(tensor), f64::INFINITY.into())
     }
+
+    /// Pad a 4-D tensor `[N, C, H, W]` with circular wrapping on width and zero-padding on height.
+    ///
+    /// # Arguments
+    ///
+    /// * `tensor` - The input tensor of shape `[N, C, H, W]`.
+    /// * `pad_h` - Number of rows to zero-pad on top and bottom.
+    /// * `pad_w` - Number of columns to circular-wrap on left and right.
+    ///
+    /// # Returns
+    ///
+    /// A tensor of shape `[N, C, H + 2*pad_h, W + 2*pad_w]`.
+    fn float_circular_pad_2d(tensor: FloatTensor<B>, pad_h: usize, pad_w: usize) -> FloatTensor<B> {
+        // Default: decompose into slice + cat + zeros.
+        // Handles pad_w > orig_w by building multiple wrap segments.
+        let shape = tensor.shape();
+        let dims: Vec<usize> = shape.iter().copied().collect();
+        let [n, c, h, w] = [dims[0], dims[1], dims[2], dims[3]];
+        let device = B::float_device(&tensor);
+
+        // Width: circular wrap
+        let tensor = if pad_w > 0 {
+            // Build left padding segments (prepended, in order)
+            let mut segments = Vec::new();
+            let mut remaining = pad_w;
+            while remaining > 0 {
+                let take = remaining.min(w);
+                let start = w - take;
+                segments.push(Self::float_slice(
+                    tensor.clone(),
+                    &[
+                        Slice::new(0, Some(n as isize), 1),
+                        Slice::new(0, Some(c as isize), 1),
+                        Slice::new(0, Some(h as isize), 1),
+                        Slice::new(start as isize, Some(w as isize), 1),
+                    ],
+                ));
+                remaining -= take;
+            }
+            // Reverse so leftmost segment comes first
+            segments.reverse();
+
+            // Center
+            segments.push(tensor.clone());
+
+            // Build right padding segments (appended, in order)
+            remaining = pad_w;
+            while remaining > 0 {
+                let take = remaining.min(w);
+                segments.push(Self::float_slice(
+                    tensor.clone(),
+                    &[
+                        Slice::new(0, Some(n as isize), 1),
+                        Slice::new(0, Some(c as isize), 1),
+                        Slice::new(0, Some(h as isize), 1),
+                        Slice::new(0, Some(take as isize), 1),
+                    ],
+                ));
+                remaining -= take;
+            }
+
+            Self::float_cat(segments, 3)
+        } else {
+            tensor
+        };
+
+        // Height: zero pad
+        if pad_h > 0 {
+            let new_w = w + 2 * pad_w;
+            let dtype = tensor.dtype().into();
+            let top = Self::float_zeros(Shape::from(vec![n, c, pad_h, new_w]), &device, dtype);
+            let bottom = Self::float_zeros(Shape::from(vec![n, c, pad_h, new_w]), &device, dtype);
+            Self::float_cat(vec![top, tensor, bottom], 2)
+        } else {
+            tensor
+        }
+    }
+
+    /// Backward pass for circular_pad_2d: compute grad_input from grad_output.
+    ///
+    /// # Arguments
+    ///
+    /// * `grad` - The gradient tensor of shape `[N, C, H + 2*pad_h, W + 2*pad_w]`.
+    /// * `pad_h` - Number of rows that were zero-padded.
+    /// * `pad_w` - Number of columns that were circular-wrapped.
+    /// * `original_h` - Original height H before padding.
+    /// * `original_w` - Original width W before padding.
+    ///
+    /// # Returns
+    ///
+    /// Gradient w.r.t. the input, shape `[N, C, H, W]`.
+    fn float_circular_pad_2d_backward(
+        grad: FloatTensor<B>,
+        pad_h: usize,
+        pad_w: usize,
+        original_h: usize,
+        original_w: usize,
+    ) -> FloatTensor<B> {
+        let shape = grad.shape();
+        let dims: Vec<usize> = shape.iter().copied().collect();
+        let [n, c, _, _] = [dims[0], dims[1], dims[2], dims[3]];
+        let out_w = original_w + 2 * pad_w;
+
+        // Strip height zero-pad rows
+        let center = Self::float_slice(
+            grad,
+            &[
+                Slice::new(0, Some(n as isize), 1),
+                Slice::new(0, Some(c as isize), 1),
+                Slice::new(pad_h as isize, Some((pad_h + original_h) as isize), 1),
+                Slice::new(0, Some(out_w as isize), 1),
+            ],
+        );
+
+        if pad_w == 0 {
+            return center;
+        }
+
+        // General approach: accumulate output columns into input columns via modulo.
+        // Output column `ow` maps to input column `(ow - pad_w) mod original_w`.
+        // Process the output in contiguous blocks where mapping doesn't wrap.
+        let device = B::float_device(&center);
+        let dtype = center.dtype().into();
+        let mut result = Self::float_zeros(
+            Shape::from(vec![n, c, original_h, original_w]),
+            &device,
+            dtype,
+        );
+        // Safe multiplier to avoid usize underflow in modulo computation
+        let safe_mul = (pad_w / original_w + 1) * original_w;
+
+        let mut ow = 0usize;
+        while ow < out_w {
+            let iw = (ow + safe_mul - pad_w) % original_w;
+            // Contiguous columns before input wraps around
+            let contig = original_w - iw;
+            let remaining = out_w - ow;
+            let block_len = contig.min(remaining);
+
+            let chunk = Self::float_slice(
+                center.clone(),
+                &[
+                    Slice::new(0, Some(n as isize), 1),
+                    Slice::new(0, Some(c as isize), 1),
+                    Slice::new(0, Some(original_h as isize), 1),
+                    Slice::new(ow as isize, Some((ow + block_len) as isize), 1),
+                ],
+            );
+            let existing = Self::float_slice(
+                result.clone(),
+                &[
+                    Slice::new(0, Some(n as isize), 1),
+                    Slice::new(0, Some(c as isize), 1),
+                    Slice::new(0, Some(original_h as isize), 1),
+                    Slice::new(iw as isize, Some((iw + block_len) as isize), 1),
+                ],
+            );
+            result = Self::float_slice_assign(
+                result,
+                &[
+                    Slice::new(0, Some(n as isize), 1),
+                    Slice::new(0, Some(c as isize), 1),
+                    Slice::new(0, Some(original_h as isize), 1),
+                    Slice::new(iw as isize, Some((iw + block_len) as isize), 1),
+                ],
+                B::float_add(existing, chunk),
+            );
+
+            ow += block_len;
+        }
+
+        result
+    }
 }

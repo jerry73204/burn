@@ -589,6 +589,24 @@ where
         kernel::flip(tensor, axes, BT::dtype())
     }
 
+    fn float_circular_pad_2d(
+        tensor: FloatTensor<Self>,
+        pad_h: usize,
+        pad_w: usize,
+    ) -> FloatTensor<Self> {
+        kernel::circular_pad_2d(tensor, pad_h, pad_w)
+    }
+
+    fn float_circular_pad_2d_backward(
+        grad: FloatTensor<Self>,
+        pad_h: usize,
+        pad_w: usize,
+        original_h: usize,
+        original_w: usize,
+    ) -> FloatTensor<Self> {
+        kernel::circular_pad_2d_backward(grad, pad_h, pad_w, original_h, original_w)
+    }
+
     fn float_cast(tensor: FloatTensor<Self>, dtype: FloatDType) -> FloatTensor<Self> {
         kernel::cast(tensor, dtype.into())
     }

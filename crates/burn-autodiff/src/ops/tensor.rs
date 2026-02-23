@@ -1466,6 +1466,68 @@ impl<B: Backend, C: CheckpointStrategy> FloatTensorOps<Self> for Autodiff<B, C> 
         B::float_is_inf(tensor.primitive)
     }
 
+    fn float_circular_pad_2d(
+        tensor: FloatTensor<Self>,
+        pad_h: usize,
+        pad_w: usize,
+    ) -> FloatTensor<Self> {
+        #[derive(Debug)]
+        struct CircularPad2d;
+
+        #[derive(new, Debug)]
+        struct RetroCircularPad2d<B: Backend> {
+            input_id: NodeId,
+            pad_h: usize,
+            pad_w: usize,
+            _backend: PhantomData<B>,
+        }
+
+        impl<B: Backend> RetroForward for RetroCircularPad2d<B> {
+            fn forward(&self, states: &mut BackwardStates, out_node: NodeId) {
+                let input = states.get_state::<B::FloatTensorPrimitive>(&self.input_id);
+                let out = B::float_circular_pad_2d(input, self.pad_h, self.pad_w);
+                states.save(out_node, out)
+            }
+        }
+
+        impl<B: Backend> Backward<B, 1> for CircularPad2d {
+            type State = (usize, usize, usize, usize); // pad_h, pad_w, orig_h, orig_w
+
+            fn backward(
+                self,
+                ops: Ops<Self::State, 1>,
+                grads: &mut Gradients,
+                _checkpointer: &mut Checkpointer,
+            ) {
+                let (pad_h, pad_w, orig_h, orig_w) = ops.state;
+
+                unary::<B, _>(ops.parents, ops.node, grads, |grad| {
+                    B::float_circular_pad_2d_backward(grad, pad_h, pad_w, orig_h, orig_w)
+                });
+            }
+        }
+
+        let shape = tensor.primitive.shape();
+        let dims: Vec<usize> = shape.iter().copied().collect();
+        let (orig_h, orig_w) = (dims[2], dims[3]);
+
+        match CircularPad2d
+            .prepare::<C>([tensor.node.clone()])
+            .memory_bound()
+            .retro_forward(RetroCircularPad2d::<B>::new(tensor.node.id, pad_h, pad_w))
+            .parents([&tensor])
+            .stateful()
+        {
+            OpsKind::Tracked(prep) => prep.finish(
+                (pad_h, pad_w, orig_h, orig_w),
+                B::float_circular_pad_2d(tensor.primitive, pad_h, pad_w),
+            ),
+            OpsKind::UnTracked(prep) => {
+                prep.finish(B::float_circular_pad_2d(tensor.primitive, pad_h, pad_w))
+            }
+        }
+    }
+
     fn float_detach(tensor: FloatTensor<Self>) -> FloatTensor<Self> {
         // When we detach a tensor, we remove it from the graph, but we still want to keep the
         // `require_grad` setting.

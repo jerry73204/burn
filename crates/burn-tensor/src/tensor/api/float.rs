@@ -1008,4 +1008,24 @@ $$\text{erf}\(x\) = \frac{2}{\sqrt{\pi}} \int_0^x e^{-t^2} dt$$
             dim,
         )))
     }
+
+    /// Pad a 4-D tensor `[N, C, H, W]` with circular wrapping on the width axis
+    /// and zero-padding on the height axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `pad_h` - Number of rows to zero-pad on top and bottom.
+    /// * `pad_w` - Number of columns to circular-wrap on left and right.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tensor does not have exactly 4 dimensions.
+    pub fn circular_pad_2d(self, pad_h: usize, pad_w: usize) -> Self {
+        assert_eq!(D, 4, "circular_pad_2d requires a 4D tensor [N, C, H, W]");
+        Tensor::new(TensorPrimitive::Float(B::float_circular_pad_2d(
+            self.primitive.tensor(),
+            pad_h,
+            pad_w,
+        )))
+    }
 }

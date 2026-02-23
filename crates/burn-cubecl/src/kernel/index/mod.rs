@@ -1,3 +1,4 @@
+mod circular_pad;
 mod flip;
 mod gather;
 mod repeat_dim;
@@ -7,6 +8,7 @@ mod select_assign;
 mod slice;
 mod slice_assign;
 
+pub(crate) use circular_pad::*;
 pub(crate) use flip::*;
 pub(crate) use repeat_dim::*;
 pub(crate) use select::*;
